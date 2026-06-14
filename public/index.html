@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Adaptive Regime Switch Pro — Autonomous Crypto Trading Agent</title>
+<meta name="description" content="A regime-aware autonomous trading agent for BTC & ETH perps. Classifies the market every hour and switches posture — trend, stand-aside, or risk-off. Validated with walk-forward, ablation and Monte Carlo." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="chart.min.js"></script>
+<script src="data.js"></script>
+<style>
+  :root{
+    --teal:#0a9d8c; --teal-deep:#067a6d; --green:#11935a; --red:#d83a4f; --amber:#c98a1e; --violet:#5a4fd4;
+    --radius:14px;
+    --font-display:'Fraunces',Georgia,'Times New Roman',serif;
+    --font-sans:'Inter Tight',ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  html[data-theme="light"]{
+    --bg:#f6f8fa; --bg2:#eef1f5; --panel:#ffffff; --panel2:#f8fafb;
+    --line:#e6eaf0; --line2:#d8dee7;
+    --ink:#0e1623; --txt:#2a3543; --mut:#69727f; --dim:#98a1ad;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 28px -16px rgba(16,24,40,.18);
+    --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+    --grid:rgba(14,22,35,.07); --ticks:#7a828e; --benchln:#9aa3af; --priceln:#46505e;
+    --gradtop:rgba(10,157,140,.20); --emptycell:#f1f3f6;
+  }
+  html[data-theme="dark"]{
+    --bg:#0a0e15; --bg2:#0d121b; --panel:#121925; --panel2:#161e2b;
+    --line:#222c3c; --line2:#2c3849;
+    --ink:#eef3fa; --txt:#d4dce6; --mut:#8492a6; --dim:#5c6b80;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 16px 40px -20px rgba(0,0,0,.7);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3);
+    --grid:rgba(255,255,255,.06); --ticks:#8492a6; --benchln:#6b7890; --priceln:#cdd7e4;
+    --gradtop:rgba(10,157,140,.26); --emptycell:#0e141d;
+    --teal:#19e3c4; --teal-deep:#19e3c4;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:15px/1.58 var(--font-sans);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  a{color:var(--teal-deep);text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px 80px}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .pos{color:var(--green)} .neg{color:var(--red)} .tealc{color:var(--teal-deep)}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* top bar */
+  .topbar{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);
+    backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+  .topbar .in{max-width:1180px;margin:0 auto;padding:11px 24px;display:flex;align-items:center;gap:12px}
+  .logo{display:flex;align-items:center;gap:11px;font-weight:700;letter-spacing:-.2px;color:var(--ink);font-size:15.5px}
+  .logo .mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--teal),var(--teal-deep));
+    display:grid;place-items:center;color:#fff;font-weight:800;font-size:14px;box-shadow:0 4px 12px -4px rgba(10,157,140,.6)}
+  .topbar .sp{flex:1}
+  .navlink{color:var(--mut);font-size:13.5px;font-weight:500;padding:6px 4px}
+  .navlink:hover{color:var(--ink)}
+  .toggle{width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);
+    display:grid;place-items:center;cursor:pointer;color:var(--mut);box-shadow:var(--shadow-sm)}
+  .toggle:hover{color:var(--ink);border-color:var(--teal)}
+  @media(max-width:760px){.navlink{display:none}}
+
+  /* hero */
+  header.hero{padding:54px 0 10px}
+  .eyebrow{color:var(--teal-deep);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    display:inline-flex;align-items:center;gap:8px}
+  .eyebrow::before{content:"";width:18px;height:2px;background:var(--teal);border-radius:2px}
+  h1{margin:14px 0 0;font-family:var(--font-display);font-size:clamp(34px,5.4vw,56px);line-height:1.06;letter-spacing:-.8px;font-weight:600;color:var(--ink);font-optical-sizing:auto}
+  h1 .g{color:var(--teal-deep);font-style:italic;font-weight:500}
+  .lede{color:var(--mut);max-width:720px;margin:18px 0 0;font-size:17px;line-height:1.6}
+  .lede b{color:var(--txt);font-weight:600}
+  .heroband{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+  .pill{font-size:12.5px;color:var(--mut);border:1px solid var(--line);background:var(--panel);border-radius:999px;
+    padding:6px 12px;white-space:nowrap;box-shadow:var(--shadow-sm)}
+  .pill b{color:var(--ink);font-weight:600}
+
+  /* sections */
+  .sec{margin-top:54px}
+  .sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:20px}
+  h2{font-family:var(--font-display);font-size:23px;letter-spacing:-.3px;color:var(--ink);margin:0;font-weight:600;font-optical-sizing:auto}
+  .sec-h .idx{font-family:var(--font-mono);color:var(--teal-deep);font-size:13px;font-weight:600;margin-right:10px}
+  .sec-h .sub{color:var(--dim);font-size:13.5px;text-align:right;max-width:440px}
+
+  /* kpi cards */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px 15px;box-shadow:var(--shadow-sm)}
+  .kpi .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+  .kpi .v{font-size:27px;font-weight:700;margin-top:8px;letter-spacing:-1px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .kpi .c{font-size:12px;color:var(--dim);margin-top:5px}
+  .kpi .c b{color:var(--mut);font-weight:600}
+
+  /* panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm)}
+  .panel.pad0{padding:16px}
+  .grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+  .grid2e{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .chartbox{position:relative;height:340px}
+  .chartbox.sm{height:250px}
+  .chartbox.xs{height:210px}
+  .ptitle{font-size:13.5px;color:var(--mut);margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;font-weight:500}
+  .ptitle b{color:var(--ink);font-weight:600}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:right;padding:11px 12px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover td{background:var(--panel2)}
+  tr.hl td{background:color-mix(in srgb,var(--teal) 9%,transparent)}
+  tr.hl:hover td{background:color-mix(in srgb,var(--teal) 13%,transparent)}
+  tr.hl td:first-child{box-shadow:inset 3px 0 0 var(--teal)}
+  .tag{font-size:10.5px;color:#fff;background:var(--teal);border-radius:5px;padding:2px 7px;margin-left:8px;font-weight:600;letter-spacing:.02em;vertical-align:middle}
+
+  .seg{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .seg .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .seg .v{font-size:25px;font-weight:700;margin-top:6px;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
+
+  .thesis{background:linear-gradient(120deg,color-mix(in srgb,var(--teal) 8%,var(--panel)),var(--panel));
+    border:1px solid var(--line2);border-radius:16px;padding:22px 24px;box-shadow:var(--shadow-sm)}
+  .thesis p{margin:0;font-size:16.5px;color:var(--txt);line-height:1.62}
+  .thesis .em{color:var(--teal-deep);font-weight:700}
+  .thesis b{color:var(--ink)}
+
+  /* loop */
+  .loop{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm)}
+  .step .n{width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--teal) 14%,transparent);
+    color:var(--teal-deep);display:grid;place-items:center;font-weight:800;font-size:13px}
+  .step h4{margin:12px 0 6px;font-size:15px;color:var(--ink)}
+  .step p{margin:0;color:var(--mut);font-size:13px;line-height:1.5}
+  .step b{color:var(--txt)}
+
+  /* heatmap */
+  .heat{display:grid;grid-template-columns:48px repeat(12,1fr);gap:5px;font-size:11.5px}
+  .heat .hc{display:grid;place-items:center;height:32px;border-radius:7px;font-weight:600;font-variant-numeric:tabular-nums}
+  .heat .lab{color:var(--mut);font-weight:600}
+  .heat .yr{color:var(--ink);font-weight:700}
+  .heat .empty{background:var(--emptycell);color:var(--dim)}
+
+  /* legend */
+  .legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--mut);font-size:12.5px;margin:12px 2px 0;align-items:center}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:middle}
+
+  .note{color:var(--dim);font-size:12.5px;margin-top:12px;line-height:1.55}
+  .note b{color:var(--mut)}
+  footer{margin-top:60px;border-top:1px solid var(--line);padding-top:24px;color:var(--dim);font-size:12.5px;line-height:1.6}
+  .disc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;color:var(--mut);box-shadow:var(--shadow-sm)}
+  .disc b{color:var(--txt)}
+
+  @media(max-width:980px){.kpis{grid-template-columns:repeat(3,1fr)}.grid2,.grid2e{grid-template-columns:1fr}.loop{grid-template-columns:1fr 1fr}.sec-h{flex-direction:column;gap:6px}.sec-h .sub{text-align:left}}
+  @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}.loop{grid-template-columns:1fr}.heat{font-size:9px;grid-template-columns:30px repeat(12,1fr);gap:3px}}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="in">
+  <div class="logo"><span class="mark">R</span> Adaptive Regime Switch <span class="tealc" style="margin-left:-4px">&nbsp;Pro</span></div>
+  <span class="sp"></span>
+  <a class="navlink" href="#performance">Performance</a>
+  <a class="navlink" href="#evidence">Evidence</a>
+  <a class="navlink" href="#robustness">Robustness</a>
+  <a class="navlink" href="#logic">Logic</a>
+  <button class="toggle" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme"></button>
+</div></div>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Autonomous crypto trading agent</div>
+    <h1>The market changes its mind.<br><span class="g">So does the agent.</span></h1>
+    <p class="lede">Most bots run one strategy in every market and bleed when the regime turns. <b>Adaptive Regime Switch Pro</b> classifies the market every hour — trending, ranging, or risk-off — and switches its posture to match: it presses confirmed trends, stands aside in chop, and defends capital when volatility goes vertical. Traded on BTC &amp; ETH USDT-margined perpetuals.</p>
+    <div class="heroband" id="heroband"></div>
+  </header>
+
+  <section class="sec" id="performance">
+    <div class="sec-h"><div><span class="idx">01</span><h2 style="display:inline">Performance vs. buy &amp; hold</h2></div>
+      <div class="sub">Full out-of-fee, no-look-ahead backtest. Benchmark = 50/50 BTC+ETH hold.</div></div>
+    <div class="kpis" id="kpis"></div>
+    <div class="thesis" style="margin-top:18px" id="thesis"></div>
+
+    <div class="panel pad0" style="margin-top:22px">
+      <div class="ptitle" style="padding:4px 6px 0"><b>Equity curve</b> — strategy vs. 50/50 hold · shading = perceived regime</div>
+      <div class="chartbox"><canvas id="eqChart"></canvas></div>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:rgba(17,147,90,.28)"></span>Trend-up</span>
+      <span><span class="dot" style="background:rgba(216,58,79,.26)"></span>Trend-down</span>
+      <span><span class="dot" style="background:rgba(120,132,150,.22)"></span>Range — stand aside</span>
+      <span><span class="dot" style="background:rgba(201,138,30,.30)"></span>Risk-off — defend</span>
+    </div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="panel pad0">
+        <div class="ptitle" style="padding:4px 6px 0"><b>Underwater</b> — drawdown from peak</div>
+        <div class="chartbox sm"><canvas id="ddChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="ptitle"><b>Walk-forward validation</b> · no out-of-sample re-tuning</div>
+        <div class="grid2e" id="wf"></div>
+        <div class="note">Logic fixed on the first 60% of history, then run untouched on the unseen last 40% — which includes the difficult 2026 bear-chop. Shown honestly, not hidden.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="evidence">
+    <div class="sec-h"><div><span class="idx">02</span><h2 style="display:inline">Does the “switch” earn its keep?</h2></div>
+      <div class="sub">Same engine, components switched off one at a time — the evidence behind every design choice, including the ones we rejected.</div></div>
+    <div class="panel pad0"><table id="ablation"></table></div>
+    <div class="note" id="ablation-note"></div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="panel">
+        <div class="ptitle"><b>Where the P&amp;L came from</b> · net by entry regime</div>
+        <div class="chartbox xs"><canvas id="attrChart"></canvas></div>
+        <div class="note" id="attr-note"></div>
+      </div>
+      <div class="panel">
+        <div class="ptitle"><b>Per-year breakdown</b></div>
+        <table id="yearTbl"></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="robustness">
+    <div class="sec-h"><div><span class="idx">03</span><h2 style="display:inline">Robustness — Monte Carlo</h2></div>
+      <div class="sub">Skill or one lucky path? We resampled the trade sequence 2,000× to map the distribution of outcomes.</div></div>
+    <div class="grid2">
+      <div class="panel pad0">
+        <div class="ptitle" style="padding:4px 6px 0"><b>Distribution of final return</b> · 2,000 bootstrapped histories</div>
+        <div class="chartbox sm"><canvas id="mcChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="ptitle"><b>What the distribution says</b></div>
+        <div class="kpis" style="grid-template-columns:1fr 1fr;gap:10px" id="mcStats"></div>
+        <div class="note">5th / 50th / 95th percentile of final return, the share of histories that ended in profit, and the 95th-percentile drawdown. A right-shifted, mostly-positive distribution is the signature of a real edge — not a single fortunate run.</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="ptitle"><b>Monthly returns</b> · net strategy return by calendar month</div>
+      <div class="heat" id="heat"></div>
+    </div>
+  </section>
+
+  <section class="sec" id="logic">
+    <div class="sec-h"><div><span class="idx">04</span><h2 style="display:inline">Regime map &amp; how it thinks</h2></div>
+      <div class="sub">Price with the perceived regime shaded behind it, and the perceive → classify → act → defend loop.</div></div>
+    <div class="panel" id="symPanel"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--green)"></span>Long entry</span>
+      <span><span class="dot" style="background:var(--red)"></span>Short entry</span>
+      <span><span class="dot" style="background:var(--mut)"></span>Exit</span>
+      <span style="color:var(--dim)">· shading = regime (see equity legend)</span>
+    </div>
+
+    <div class="loop" style="margin-top:22px">
+      <div class="step"><div class="n">1</div><h4>Perceive</h4><p>Measures trend strength (ADX), the volatility regime (ATR percentile over 30 days), the macro trend (EMA-200) and Donchian breakout channels on BTC &amp; ETH perps.</p></div>
+      <div class="step"><div class="n">2</div><h4>Classify</h4><p>Labels the hour <b style="color:var(--green)">Trend</b>, <b style="color:var(--mut)">Range</b> or <b style="color:var(--amber)">Risk-off</b> — with persistence + a post-stop cooldown so it doesn't flip on noise.</p></div>
+      <div class="step"><div class="n">3</div><h4>Act</h4><p>In a confirmed trend it takes the breakout (cleared by ≥<span id="p_buf">·</span> ATR, ADX ≥ <span id="p_adx">·</span>), sized <b>inversely to volatility</b>. In a range it holds fire — chop has no edge.</p></div>
+      <div class="step"><div class="n">4</div><h4>Defend</h4><p>Hard ATR stop on every trade, a Donchian trailing exit to bank trends, a risk-off rail that stops initiating into chaos, and a circuit breaker that halts after a <span id="p_brk">·</span>% drawdown.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="disc" id="methodology"></div>
+    <div style="margin-top:14px">Built by <b>Rising Technology</b> for the Bitget AI Base Camp Hackathon S1 · <span id="gen"></span></div>
+    <div style="margin-top:6px"><b>Research backtest, not financial advice.</b> Past performance does not guarantee future results. Crypto perpetuals carry substantial risk including total loss of capital.</div>
+  </footer>
+</div>
+
+<script>
+const D = window.__DATA__;
+const fmtPct1 = x => (x>=0?'+':'') + (x*100).toFixed(1) + '%';
+const fmtX = x => x.toFixed(2);
+const dts = t => new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});
+const cls = x => x>=0?'pos':'neg';
+const usd = x => '$'+Math.round(x).toLocaleString();
+const m = D.metrics, b = D.benchMetrics, P = D.meta.params;
+
+// ---- theme plumbing ----
+const charts = {};
+function cssv(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function pal(){
+  const dark = document.documentElement.dataset.theme==='dark';
+  return {
+    dark, grid:cssv('--grid'), ticks:cssv('--ticks'), bench:cssv('--benchln'), price:cssv('--priceln'),
+    ink:cssv('--ink'), teal:cssv('--teal'), green:cssv('--green'), red:cssv('--red'), gradTop:cssv('--gradtop'),
+  };
+}
+function mk(id, cfg){ if(charts[id]) charts[id].destroy(); charts[id] = new Chart(document.getElementById(id), cfg); }
+
+// regime shading plugin (theme-aware alpha)
+Chart.register({ id:'regimeBg',
+  beforeDatasetsDraw(chart, args, opts){
+    const rd = opts.data; if(!rd) return;
+    const dark = document.documentElement.dataset.theme==='dark';
+    const {ctx, chartArea:ca, scales:{x}} = chart;
+    const colors = dark
+      ? {TREND_UP:'rgba(17,147,90,.20)',TREND_DOWN:'rgba(216,58,79,.18)',RANGE:'rgba(120,132,150,.12)',RISK_OFF:'rgba(201,138,30,.26)',NEUTRAL:'rgba(120,132,150,.07)'}
+      : {TREND_UP:'rgba(17,147,90,.11)',TREND_DOWN:'rgba(216,58,79,.10)',RANGE:'rgba(120,132,150,.10)',RISK_OFF:'rgba(201,138,30,.16)',NEUTRAL:'rgba(120,132,150,.05)'};
+    for(let i=0;i<rd.t.length-1;i++){
+      const c = colors[rd.regime[i]]; if(!c) continue;
+      const x0 = x.getPixelForValue(rd.t[i]), x1 = x.getPixelForValue(rd.t[i+1]);
+      ctx.fillStyle = c; ctx.fillRect(x0, ca.top, Math.max(1,x1-x0), ca.bottom-ca.top);
+    }
+  }});
+
+Chart.defaults.font.family = "'Inter Tight', ui-sans-serif, system-ui, sans-serif";
+
+// ---------- static content (theme via CSS vars) ----------
+document.getElementById('heroband').innerHTML = [
+  ['Window', D.meta.start+' → '+D.meta.end],
+  ['Universe', D.meta.symbols.join(' + ')+' perps'],
+  ['Bars', D.meta.bars.toLocaleString()+' × 1h'],
+  ['Costs', (P.feeRate*1e4)+' bp/side incl. slippage'],
+  ['Validation', 'walk-forward · ablation · Monte Carlo'],
+].map(([k,v])=>`<span class="pill"><b>${k}</b> ${v}</span>`).join('');
+document.getElementById('p_buf').textContent = P.breakoutBufAtr;
+document.getElementById('p_adx').textContent = P.adxTrend;
+document.getElementById('p_brk').textContent = (P.breakerDD*100).toFixed(0);
+document.getElementById('gen').textContent = 'Generated '+new Date(D.meta.generated).toUTCString();
+
+const kpis = [
+  {k:'Total Return', v:fmtPct1(m.roi), cl:cls(m.roi), c:`vs <b>${fmtPct1(b.roi)}</b> hold`},
+  {k:'Max Drawdown', v:(m.maxDD*100).toFixed(1)+'%', cl:'tealc', c:`vs <b>${(b.maxDD*100).toFixed(1)}%</b> hold`},
+  {k:'Sharpe', v:fmtX(m.sharpe), cl:cls(m.sharpe), c:`Sortino <b>${fmtX(m.sortino)}</b>`},
+  {k:'Calmar', v:fmtX(m.calmar), cl:cls(m.calmar), c:'CAGR ÷ max DD'},
+  {k:'Profit Factor', v:fmtX(m.profitFactor), cl:cls(m.profitFactor-1), c:`win <b>${(m.winRate*100).toFixed(0)}%</b> · ${m.totalTrades} trades`},
+  {k:'Exposure', v:(m.exposure*100).toFixed(0)+'%', cl:'', c:`avg hold <b>${m.avgHold.toFixed(0)}h</b>`},
+];
+document.getElementById('kpis').innerHTML = kpis.map(c=>
+  `<div class="kpi"><div class="k">${c.k}</div><div class="v ${c.cl}">${c.v}</div><div class="c">${c.c}</div></div>`).join('');
+
+document.getElementById('thesis').innerHTML =
+  `<p>Over ${D.meta.start.slice(0,4)}–${D.meta.end.slice(0,4)}, buy-and-hold returned <span class="neg">${fmtPct1(b.roi)}</span> with a brutal <b>${(b.maxDD*100).toFixed(0)}%</b> drawdown. The agent turned the same two years into <span class="em">${fmtPct1(m.roi)}</span> while never losing more than <b>${(m.maxDD*100).toFixed(1)}%</b> from a peak — roughly <b>${(b.maxDD/m.maxDD).toFixed(0)}×</b> less pain. It did it by being in the market only <b>${(m.exposure*100).toFixed(0)}%</b> of the time, and sitting out the rest.</p>`;
+
+// walk-forward
+const seg=(name,s)=>`<div class="seg"><div class="k">${name}</div>
+  <div class="v ${cls(s.roi)}">${fmtPct1(s.roi)}</div>
+  <div style="color:var(--dim);font-size:12.5px;margin-top:4px">Sharpe ${fmtX(s.sharpe)} · Max DD ${(s.maxDD*100).toFixed(1)}%</div></div>`;
+document.getElementById('wf').innerHTML = seg('In-sample · first 60%',D.wf.inSample)+seg('Out-of-sample · last 40%',D.wf.outSample);
+
+// ablation
+const V = D.variants;
+const rowsDef = [
+  ['naive','Naive always-on breakout','No regime gate, no filters — a dumb baseline'],
+  ['core','Adaptive Regime Switch Pro','Regime gate + trend filter + full risk stack', true],
+  ['plusMR','+ Mean-reversion sleeve','Added a range-fading engine — and it dragged'],
+  ['meanrevOnly','Mean-reversion only','Fading extremes on hourly crypto has no edge'],
+];
+let at = '<thead><tr><th>Configuration</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Calmar</th><th>Trades</th></tr></thead><tbody>';
+for(const [key,name,desc,hl] of rowsDef){ const v=V[key]; if(!v) continue;
+  at += `<tr class="${hl?'hl':''}"><td><b style="color:var(--ink)">${name}</b>${hl?'<span class="tag">shipped</span>':''}<div style="color:var(--dim);font-size:12px;font-weight:400;margin-top:2px">${desc}</div></td>`+
+    `<td class="${cls(v.roi)} mono">${fmtPct1(v.roi)}</td><td class="${cls(v.sharpe)} mono">${fmtX(v.sharpe)}</td>`+
+    `<td class="mono">${(v.maxDD*100).toFixed(1)}%</td><td class="${cls(v.calmar)} mono">${fmtX(v.calmar)}</td><td class="mono">${v.totalTrades}</td></tr>`;
+}
+document.getElementById('ablation').innerHTML = at+'</tbody>';
+document.getElementById('ablation-note').innerHTML =
+  `Read top-down: filtering a dumb breakout through the regime gate lifts return from <b>${fmtPct1(V.naive.roi)}</b> to <b class="tealc">${fmtPct1(V.core.roi)}</b> and roughly halves both the drawdown and the trade count. Bolting a mean-reversion engine on top <i>lowered</i> returns — so the agent doesn't trade ranges, it sits them out. We show the rejected variants because honest evidence beats a cherry-picked number.`;
+
+// per-year
+let yh='<thead><tr><th>Year</th><th>Return</th><th>Max DD</th><th>Sharpe</th><th>Trades</th><th>Win</th></tr></thead><tbody>';
+for(const r of D.yearTbl) yh+=`<tr><td><b style="color:var(--ink)">${r.year}</b></td><td class="${cls(r.roi)} mono">${fmtPct1(r.roi)}</td><td class="mono">${(r.maxDD*100).toFixed(1)}%</td><td class="${cls(r.sharpe)} mono">${fmtX(r.sharpe)}</td><td class="mono">${r.trades}</td><td class="mono">${(r.winRate*100).toFixed(0)}%</td></tr>`;
+document.getElementById('yearTbl').innerHTML = yh+'</tbody>';
+
+// monte carlo stats
+const mc = D.mc;
+document.getElementById('attr-note').innerHTML = 'Net P&amp;L by the regime in force when each trade opened. Trend-up carried the book; short trades in down-trends roughly paid their way.';
+document.getElementById('mcStats').innerHTML = [
+  {k:'Median return',v:fmtPct1(mc.roiP50),cl:cls(mc.roiP50)},
+  {k:'P(profitable)',v:(mc.probProfit*100).toFixed(0)+'%',cl:'tealc'},
+  {k:'5th–95th pctile',v:fmtPct1(mc.roiP5)+' … '+fmtPct1(mc.roiP95),cl:'',sm:true},
+  {k:'Drawdown p95',v:(mc.ddP95*100).toFixed(1)+'%',cl:''},
+].map(c=>`<div class="kpi"><div class="k">${c.k}</div><div class="v ${c.cl}" style="font-size:${c.sm?'18px':'24px'}">${c.v}</div></div>`).join('');
+
+// monthly heatmap
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const byYr = {};
+for(const r of D.monthly){ const [y,mo]=r.month.split('-'); (byYr[y] ||= {})[+mo-1]=r.ret; }
+function heatCell(v){
+  if(v==null) return {cls:'empty',style:'',txt:''};
+  const a = Math.min(1, Math.abs(v)/0.08);
+  const col = v>=0 ? `rgba(17,147,90,${0.16+a*0.74})` : `rgba(216,58,79,${0.16+a*0.74})`;
+  const txt = Math.abs(v)>0.035 ? '#fff' : (v>=0?'var(--green)':'var(--red)');
+  return {cls:'',style:`background:${col};color:${txt}`,txt:(v*100).toFixed(1)};
+}
+let hm = '<div class="hc lab"></div>'+MON.map(x=>`<div class="hc lab">${x}</div>`).join('');
+for(const y of Object.keys(byYr).sort()){
+  hm += `<div class="hc yr">${y}</div>`;
+  for(let mo=0;mo<12;mo++){ const c=heatCell(byYr[y][mo]);
+    hm += `<div class="hc ${c.cls}" style="${c.style}" title="${y} ${MON[mo]}: ${byYr[y][mo]==null?'—':fmtPct1(byYr[y][mo])}">${c.txt}</div>`;
+  }
+}
+document.getElementById('heat').innerHTML = hm;
+
+// methodology
+document.getElementById('methodology').innerHTML =
+  `<b>Methodology.</b> Backtested on real Binance USDT-M perpetual hourly klines (public market archive) for ${D.meta.symbols.join(' & ')}, ${D.meta.start} → ${D.meta.end} (${D.meta.bars.toLocaleString()} bars). `+
+  `Every signal is computed on a <b>closed</b> bar and filled at the <b>next bar's open</b> — no look-ahead. Fees of ${(P.feeRate*1e4)} bp per side (taker + slippage) are charged on every fill. `+
+  `Sizing is inverse-volatility: each trade risks ${(P.riskFrac*100).toFixed(2)}% of sleeve capital to a ${P.trendStopAtr}×ATR stop, notional capped at ${P.maxLev}×. `+
+  `Robustness is shown three ways: a 60/40 walk-forward with no out-of-sample re-tuning, an ablation switching each component off, and a 2,000-path Monte Carlo bootstrap of the trade sequence.`;
+
+// ---------- charts (rebuilt on theme change) ----------
+function renderCharts(){
+  const c = pal();
+  const tickc = {color:c.ticks,font:{size:11,family:"'IBM Plex Mono', monospace"}};
+  const grid = {color:c.grid};
+  const eqRegime = {t:D.sym[D.meta.symbols[0]].t, regime:D.sym[D.meta.symbols[0]].regime};
+
+  mk('eqChart',{type:'line',
+    data:{datasets:[
+      {label:'Adaptive Regime Switch Pro',data:D.eq.map(p=>({x:p.t,y:p.eq})),borderColor:c.teal,
+        backgroundColor:(ctx)=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,340);g.addColorStop(0,c.gradTop);g.addColorStop(1,'rgba(10,157,140,0)');return g;},
+        borderWidth:2.2,pointRadius:0,fill:true,tension:.12},
+      {label:'50/50 BTC+ETH hold',data:D.eq.map(p=>({x:p.t,y:p.bench})),borderColor:c.bench,borderWidth:1.4,pointRadius:0,borderDash:[5,4],tension:.12},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:c.ink,usePointStyle:true,pointStyleWidth:10,boxHeight:7,font:{size:12.5}}},
+        regimeBg:{data:eqRegime},
+        tooltip:{callbacks:{label:t=>t.dataset.label+': '+usd(t.parsed.y),title:t=>dts(t[0].parsed.x)}}},
+      scales:{x:{type:'linear',ticks:{...tickc,callback:v=>dts(v),maxTicksLimit:9},grid},
+              y:{ticks:{...tickc,callback:v=>'$'+(v/1000).toFixed(0)+'k'},grid}}}
+  });
+
+  mk('ddChart',{type:'line',
+    data:{datasets:[{label:'Drawdown',data:D.dd.map(p=>({x:p.t,y:p.dd*100})),borderColor:c.red,
+      backgroundColor:'rgba(216,58,79,.14)',borderWidth:1.4,pointRadius:0,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:t=>t.parsed.y.toFixed(1)+'%',title:t=>dts(t[0].parsed.x)}}},
+      scales:{x:{type:'linear',ticks:{...tickc,callback:v=>dts(v),maxTicksLimit:7},grid},
+              y:{ticks:{...tickc,callback:v=>v.toFixed(0)+'%'},grid}}}
+  });
+
+  const ar = D.attr.byRegime, arK = Object.keys(ar);
+  mk('attrChart',{type:'bar',
+    data:{labels:arK.map(k=>k.replace('_',' ')),datasets:[{data:arK.map(k=>ar[k].pnl),
+      backgroundColor:arK.map(k=>ar[k].pnl>=0?c.green:c.red),borderRadius:6,maxBarThickness:64}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:t=>usd(t.parsed.y)+'  ·  '+ar[arK[t.dataIndex]].n+' trades  ·  win '+(ar[arK[t.dataIndex]].win/ar[arK[t.dataIndex]].n*100).toFixed(0)+'%'}}},
+      scales:{x:{ticks:{...tickc,font:{size:12}},grid:{display:false}},y:{ticks:{...tickc,callback:v=>'$'+(v/1000).toFixed(0)+'k'},grid}}}
+  });
+
+  const H = mc.roiHist, labels = H.counts.map((_,i)=>((H.lo+(i+0.5)*H.w)*100));
+  mk('mcChart',{type:'bar',
+    data:{labels:labels.map(v=>v.toFixed(0)+'%'),datasets:[{data:H.counts,
+      backgroundColor:labels.map(v=>v>=0?'rgba(17,147,90,.78)':'rgba(216,58,79,.78)'),borderRadius:3,categoryPercentage:.97,barPercentage:1}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{title:t=>'final return ≈ '+t[0].label,label:t=>t.parsed.y+' of 2,000 runs'}}},
+      scales:{x:{ticks:{...tickc,maxTicksLimit:10},grid:{display:false}},
+              y:{ticks:tickc,grid,title:{display:true,text:'# of resampled histories',color:c.ticks,font:{size:11}}}}}
+  });
+
+  D.meta.symbols.forEach((s,i)=>{
+    const id='sym'+i;
+    if(!document.getElementById(id)){
+      const wrap=document.createElement('div'); if(i>0) wrap.style.marginTop='22px';
+      wrap.innerHTML=`<div class="ptitle"><b>${s}</b> · price, regime shading &amp; executed trades</div><div class="chartbox sm"><canvas id="${id}"></canvas></div>`;
+      document.getElementById('symPanel').appendChild(wrap);
+    }
+    const sd=D.sym[s];
+    mk(id,{type:'line',
+      data:{datasets:[
+        {label:s,data:sd.t.map((t,j)=>({x:t,y:sd.close[j]})),borderColor:c.price,borderWidth:1.1,pointRadius:0,tension:.05},
+        {label:'Long',type:'scatter',data:sd.longs.map(p=>({x:p.t,y:p.p})),backgroundColor:c.green,borderColor:'rgba(255,255,255,.7)',borderWidth:.5,pointStyle:'triangle',radius:6,rotation:0},
+        {label:'Short',type:'scatter',data:sd.shorts.map(p=>({x:p.t,y:p.p})),backgroundColor:c.red,borderColor:'rgba(255,255,255,.7)',borderWidth:.5,pointStyle:'triangle',rotation:180,radius:6},
+        {label:'Exit',type:'scatter',data:sd.exits.map(p=>({x:p.t,y:p.p})),backgroundColor:c.ticks,pointStyle:'crossRot',radius:4},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',intersect:true},
+        plugins:{legend:{display:false},regimeBg:{data:{t:sd.t,regime:sd.regime}},
+          tooltip:{callbacks:{title:t=>dts(t[0].parsed.x),label:t=>t.dataset.label+' '+usd(t.parsed.y)}}},
+        scales:{x:{type:'linear',ticks:{...tickc,callback:v=>dts(v),maxTicksLimit:9},grid},
+                y:{ticks:{...tickc,callback:v=>'$'+v.toLocaleString()},grid}}}
+    });
+  });
+}
+
+// ---------- theme toggle ----------
+const sun = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>';
+const moon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>';
+function applyTheme(t){
+  document.documentElement.dataset.theme = t;
+  document.getElementById('themeBtn').innerHTML = t==='dark' ? sun : moon;
+  try{ localStorage.setItem('arsp-theme', t); }catch(e){}
+  renderCharts();
+}
+document.getElementById('themeBtn').onclick = ()=> applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+let saved='light'; try{ saved = localStorage.getItem('arsp-theme') || 'light'; }catch(e){}
+applyTheme(saved);
+</script>
+</body>
+</html>

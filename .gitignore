@@ -1,0 +1,6 @@
+node_modules/
+rising-demo.zip
+public/data.json
+_*.png
+*.log
+.DS_Store
