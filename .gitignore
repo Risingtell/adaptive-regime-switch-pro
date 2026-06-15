@@ -7,3 +7,7 @@ _*.png
 
 .env
 ai-cache/
+
+# bitget playbook scratch/artifacts
+playbook/*.tar.gz
+playbook/_*.json

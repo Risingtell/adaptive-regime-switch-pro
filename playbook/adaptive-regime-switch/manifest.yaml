@@ -1,0 +1,96 @@
+name: adaptive-regime-switch-pro
+display_name: "Adaptive Regime Switch Pro"
+version: "1.0.0"
+description: "Regime-gated trend-following agent for BTC perpetual futures on hourly bars"
+long_description: |
+  Adaptive Regime Switch Pro is a trend-following strategy on BTC perpetual
+  futures that aims to capture the middle portion of sustained directional moves
+  while sitting out the conditions where trend trading bleeds. The thesis is that
+  a single fixed strategy gives back its gains when the market changes character,
+  so this agent first classifies the market into one of three states on every
+  bar, a trending state, a quiet range state, and a high-volatility risk-off
+  state, and only commits directional risk when the state actually favors a
+  trend. It is designed for subscribers who want a transparent, rules-based
+  signal rather than a black box.
+
+  Entry decisions are driven by alignment between a long-horizon trend filter, a
+  directional-strength reading, and a channel breakout. The agent enters long
+  when the broader trend points up and price breaks out above its recent range,
+  and enters short on the mirror condition when the trend points down and price
+  breaks below its range. It deliberately waits for the breakout to confirm
+  rather than anticipating it, and it never fades extremes or pyramids into a
+  position.
+
+  Exits work through risk control rather than profit targets. Each position
+  carries a volatility-scaled stop that trails behind price as the trade moves
+  in favor, so the agent closes when price hits that trailing stop or when the
+  market decays out of the trending state. Many small losing trades are accepted
+  as the cost of catching the occasional larger run.
+
+  Subscribers can tune leverage, margin budget, and the trading symbol. Raising
+  leverage amplifies both upside and drawdown together and does not make the
+  agent more selective. Margin budget is the per-strategy capital the platform
+  sizes against and uses as the return denominator. Position size also scales
+  inversely to volatility, committing less when the market is wild.
+
+  The strategy underperforms in choppy, range-bound markets where breakouts fail
+  and stops are hit repeatedly, and around gap-driven news moves or persistent
+  funding dislocation it can string together losses. The risk-off filter reduces
+  but does not remove this drawdown risk. Past backtest performance is not a
+  guarantee of live profitability; only subscribe with risk you can tolerate.
+
+market_type: contract
+trading_symbols: ["BTCUSDT"]
+tags: ["trend", "regime", "breakout", "btc", "contract"]
+
+decision_mode: deterministic
+backtest_support: full
+runtime_profile: deterministic
+execution_mode: signal_only
+follow_trade_supported: false
+
+strategy_config:
+  trading_symbols: ["BTCUSDT"]
+  leverage: 3
+  margin_budget: "100"
+  adx_period: 14
+  atr_period: 14
+  ema_trend_period: 200
+  donchian_period: 20
+  adx_enter: 22.0
+  adx_exit: 18.0
+  vol_riskoff: 0.015
+  atr_stop_mult: 2.0
+  atr_trail_mult: 3.0
+  cooldown_bars: 12
+  breaker_dd: 0.15
+  breaker_cooldown: 48
+  ref_vol: 0.010
+
+user_config_schema:
+  trading_symbols:
+    type: array
+    item_type: string
+    default: ["BTCUSDT"]
+    options: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    aliases:
+      btc: BTCUSDT
+      bitcoin: BTCUSDT
+      eth: ETHUSDT
+    min_items: 1
+    max_items: 1
+    label: "Trading symbol"
+  leverage:
+    type: integer
+    default: 3
+    min: 1
+    max: 10
+    aliases:
+      3x: 3
+      5x: 5
+    label: "Leverage"
+  margin_budget:
+    type: string
+    default: "100"
+    pattern: "^[0-9]+(\\.[0-9]+)?$"
+    label: "Margin budget USDT"
