@@ -159,6 +159,22 @@
   .disc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;color:var(--mut);box-shadow:var(--shadow-sm)}
   .disc b{color:var(--txt)}
 
+  /* live panel */
+  .live{background:linear-gradient(120deg,color-mix(in srgb,var(--teal) 7%,var(--panel)),var(--panel));border:1px solid var(--line2);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow-sm);margin-top:24px}
+  .live-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .livedot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(17,147,90,.5);animation:pulse 1.9s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(17,147,90,.5)}70%{box-shadow:0 0 0 8px rgba(17,147,90,0)}100%{box-shadow:0 0 0 0 rgba(17,147,90,0)}}
+  .live-badge{font-weight:700;font-size:11.5px;letter-spacing:.12em;color:var(--green)}
+  .chip{font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;color:var(--mut);background:var(--panel);white-space:nowrap}
+  .chip b{color:var(--ink);font-weight:600}
+  .live-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+  .live-stats .s .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .live-stats .s .v{font-size:21px;font-weight:700;letter-spacing:-.5px;color:var(--ink);margin-top:3px;font-variant-numeric:tabular-nums}
+  .lfeed{margin-top:15px;border-top:1px solid var(--line);padding-top:12px;display:grid;gap:8px}
+  .lrow{display:grid;grid-template-columns:58px 1fr;gap:10px;font-size:12.5px;align-items:baseline;color:var(--txt)}
+  .lrow .tm{color:var(--dim);font-family:var(--font-mono);font-size:10.5px}
+  .ldot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  @media(max-width:700px){.live-stats{grid-template-columns:1fr 1fr}}
   @media(max-width:980px){.kpis{grid-template-columns:repeat(3,1fr)}.grid2,.grid2e,#symPanel{grid-template-columns:1fr}.loop{grid-template-columns:1fr 1fr}.sec-h{flex-direction:column;gap:6px}.sec-h .sub{text-align:left}}
   @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}.loop{grid-template-columns:1fr}.heat{font-size:9px;grid-template-columns:30px repeat(12,1fr);gap:3px}}
 </style>
@@ -184,6 +200,8 @@
     <p class="lede">Most bots run one strategy in every market and bleed when the regime turns. <b>Adaptive Regime Switch Pro</b> classifies the market every hour — trending, ranging, or risk-off — and switches its posture to match: it presses confirmed trends, stands aside in chop, and defends capital when volatility goes vertical. Traded on BTC &amp; ETH USDT-margined perpetuals.</p>
     <div class="heroband" id="heroband"></div>
   </header>
+
+  <div id="livePanel" class="live" style="display:none"></div>
 
   <section class="sec" id="performance">
     <div class="sec-h"><div><span class="idx">01</span><h2 style="display:inline">Performance vs. buy &amp; hold</h2></div>
@@ -564,6 +582,37 @@ function applyTheme(t){
 document.getElementById('themeBtn').onclick = ()=> applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
 let saved='light'; try{ saved = localStorage.getItem('arsp-theme') || 'light'; }catch(e){}
 applyTheme(saved);
+
+// ---------- live paper-trading panel (fetches the hourly state committed by CI) ----------
+(async function(){
+  const RAW = 'https://raw.githubusercontent.com/Risingtell/adaptive-regime-switch-pro/main/public/live-state.json';
+  let s; try { const r = await fetch(RAW + '?t=' + Date.now(), {cache:'no-store'}); if(!r.ok) return; s = await r.json(); } catch(e){ return; }
+  const el = document.getElementById('livePanel'); if(!el || !s) return;
+  const rel = t => { const d=(Date.now()-new Date(t).getTime())/1000; if(d<90)return'just now'; if(d<3600)return Math.round(d/60)+'m ago'; if(d<86400)return Math.round(d/3600)+'h ago'; return Math.round(d/86400)+'d ago'; };
+  const since = dts(s.startedMs || s.started);
+  const pnlCl = (s.pnlPct||0)>=0 ? 'pos' : 'neg';
+  const posChips = (s.positions && s.positions.length)
+    ? s.positions.map(p=>`<span class="chip"><b>${p.sym}</b> ${p.side} @ $${(+p.entry).toLocaleString()} · uPnL <span class="${p.upnl>=0?'pos':'neg'}">${p.upnl>=0?'+':''}$${(p.upnl||0).toLocaleString()}</span></span>`).join('')
+    : '<span class="chip">flat · no open positions</span>';
+  const actColor = a => ({open:'var(--green)',close:'var(--mut)',veto:'var(--red)',scan:'var(--dim)',start:'var(--teal-deep)',error:'var(--amber)',warmup:'var(--dim)'})[a] || 'var(--dim)';
+  const feed = (s.log||[]).slice(0,6).map(l=>`<div class="lrow"><span class="tm">${new Date(l.t).toUTCString().slice(17,22)}</span><span><span class="ldot" style="background:${actColor(l.action)}"></span>${l.detail||l.action}${l.reason?` <span style="color:var(--dim)">— ${l.reason}</span>`:''}</span></div>`).join('');
+  el.innerHTML =
+    `<div class="live-top"><span class="livedot"></span><span class="live-badge">LIVE · PAPER</span>
+       <b style="color:var(--ink)">Forward test on live BTC &amp; ETH</b>
+       <span class="chip">updated ${s.lastUpdate?rel(s.lastUpdate):'pending first run'}</span>
+       ${s.source?`<span class="chip">data: ${s.source}</span>`:''}
+       ${s.model?`<span class="chip">AI: ${s.model}</span>`:''}</div>
+     <div class="live-stats">
+       <div class="s"><div class="k">Paper equity</div><div class="v">$${(s.equity||0).toLocaleString()}</div></div>
+       <div class="s"><div class="k">P&amp;L since ${since}</div><div class="v ${pnlCl}">${(s.pnlPct||0)>=0?'+':''}${(s.pnlPct||0).toFixed(2)}%</div></div>
+       <div class="s"><div class="k">Max drawdown</div><div class="v">${(s.maxDD||0).toFixed(2)}%</div></div>
+       <div class="s"><div class="k">Open positions</div><div class="v">${(s.positions||[]).length}</div></div>
+     </div>
+     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">${posChips}</div>
+     <div class="lfeed">${feed}</div>
+     <div class="note" style="margin-top:10px">Runs every hour in the cloud on live candles, using the same regime logic as the backtest with the AI co-pilot vetoing weak entries. Paper account, no real funds.</div>`;
+  el.style.display = '';
+})();
 </script>
 </body>
 </html>
