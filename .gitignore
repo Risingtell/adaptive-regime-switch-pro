@@ -4,3 +4,6 @@ public/data.json
 _*.png
 *.log
 .DS_Store
+
+.env
+ai-cache/

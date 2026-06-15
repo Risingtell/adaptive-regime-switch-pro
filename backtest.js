@@ -50,6 +50,8 @@ const P = {
   breakerPause: 168,      // halt ~1 week, then re-baseline & resume
 };
 
+const rnd = (x, d = 2) => (x == null || !Number.isFinite(x)) ? null : Math.round(x * 10 ** d) / 10 ** d;
+
 // ---------------- Feature engineering ----------------
 function computeFeatures(bars) {
   const close = bars.map(b => b.close);
@@ -132,12 +134,12 @@ function run(cfg = {}) {
     sv.cash += grossPnl - fee;
     grossTraded += sv.qty * price;
     trades.push({ sym: s, side: sv.pos > 0 ? 'long' : 'short', engine: sv.engine, regimeAtEntry: sv.regimeAtEntry,
-      entry: sv.entry, exit: price, pnl: grossPnl - fee, time: timeMs, hold: sv.bars, reason });
+      entry: sv.entry, exit: price, pnl: grossPnl - fee, time: timeMs, hold: sv.bars, reason, ai: sv.entryCtx || null });
     perSym[s].exits.push({ t: timeMs, p: price });
     if (reason === 'stop') sv.cooldown = P.cooldown;
-    sv.pos = 0; sv.qty = 0; sv.engine = null; sv.bars = 0;
+    sv.pos = 0; sv.qty = 0; sv.engine = null; sv.bars = 0; sv.entryCtx = null;
   }
-  function openPos(sv, s, dir, price, atr, stopAtr, engine, regime, timeMs) {
+  function openPos(sv, s, dir, price, atr, stopAtr, engine, regime, timeMs, ctx) {
     const stopDist = stopAtr * atr;
     if (!(stopDist > 0)) return;
     let qty = (sv.cash * P.riskFrac) / stopDist;        // inverse-vol sizing
@@ -146,7 +148,7 @@ function run(cfg = {}) {
     if (!(qty > 0)) return;
     sv.cash -= feeOn(qty * price);
     grossTraded += qty * price;
-    sv.pos = dir; sv.qty = qty; sv.entry = price; sv.engine = engine; sv.regimeAtEntry = regime; sv.bars = 0;
+    sv.pos = dir; sv.qty = qty; sv.entry = price; sv.engine = engine; sv.regimeAtEntry = regime; sv.bars = 0; sv.entryCtx = ctx || null;
     sv.stop = dir > 0 ? price - stopDist : price + stopDist;
     (dir > 0 ? perSym[s].longs : perSym[s].shorts).push({ t: timeMs, p: price });
   }
@@ -214,8 +216,19 @@ function run(cfg = {}) {
         const buf = C.naive ? 0 : P.breakoutBufAtr * f.atr;
         const longBreak = f.entryHi != null && f.close > f.entryHi + buf && (C.naive || f.close > f.ema) && regime !== 'TREND_DOWN';
         const shortBreak = f.entryLo != null && f.close < f.entryLo - buf && (C.naive || f.close < f.ema) && regime !== 'TREND_UP';
-        if (longBreak) { openPos(sv, s, +1, op, f.atr, P.trendStopAtr, 'trend', f.regime, common[k + 1]); continue; }
-        if (shortBreak) { openPos(sv, s, -1, op, f.atr, P.trendStopAtr, 'trend', f.regime, common[k + 1]); continue; }
+        if (longBreak || shortBreak) {
+          const side = longBreak ? 'long' : 'short';
+          const fi = idx[s].get(t);
+          const cAgo = n => (fi - n >= 0 && feats[s][fi - n]) ? feats[s][fi - n].close : null;
+          const c24 = cAgo(24), c72 = cAgo(72);
+          const ctx = { time: t, sym: s, side, regime: f.regime,
+            adx: rnd(f.adx, 1), volPctile: rnd(f.volPct, 2), pxVsEma200Pct: rnd((f.close / f.ema - 1) * 100, 2),
+            ret24hPct: c24 ? rnd((f.close / c24 - 1) * 100, 2) : null, ret72hPct: c72 ? rnd((f.close / c72 - 1) * 100, 2) : null,
+            breakoutClearAtr: rnd(side === 'long' ? (f.close - f.entryHi) / f.atr : (f.entryLo - f.close) / f.atr, 2) };
+          const vetoed = C.verdicts && C.verdicts[s + '@' + t] === 'VETO';
+          if (!vetoed) openPos(sv, s, longBreak ? +1 : -1, op, f.atr, P.trendStopAtr, 'trend', f.regime, common[k + 1], ctx);
+          continue;
+        }
       }
       if (C.meanrev && regime === 'RANGE' && f.volPct >= P.mrVolFloor && f.volPct <= P.mrVolCeil) {
         if (f.z != null && f.z <= -P.mrZEntry) openPos(sv, s, +1, op, f.atr, P.mrStopAtr, 'meanrev', f.regime, common[k + 1]);
@@ -341,6 +354,17 @@ function main() {
     meanrevOnly: fullMetrics(run({ trend: false, meanrev: true })),               // MR in isolation (no edge on this tape)
   };
 
+  // AI co-pilot overlay — if reviews have been generated, add the AI-gated variant + decision log
+  let aiBlock = null;
+  const aiPath = path.join(__dirname, 'public', 'ai-log.json');
+  if (fs.existsSync(aiPath)) {
+    try {
+      const aiLog = JSON.parse(fs.readFileSync(aiPath, 'utf8'));
+      variants.aiCoPilot = fullMetrics(run({ verdicts: aiLog.verdicts || {} }));
+      aiBlock = { model: aiLog.model, reviewed: aiLog.reviewed, total: aiLog.total, complete: aiLog.complete, counts: aiLog.counts, vetoedPnl: aiLog.vetoedPnl, recent: aiLog.recent };
+    } catch (e) { console.error('AI log parse failed:', e.message); }
+  }
+
   // per-year
   const byYear = {}, yearTrades = {};
   for (const e of full.eqSeries) { const y = new Date(e.t).getUTCFullYear(); (byYear[y] ||= []).push(e.eq); }
@@ -368,7 +392,7 @@ function main() {
 
   const out = {
     meta: { generated: new Date().toISOString(), start: new Date(full.common[0]).toISOString().slice(0, 10), end: new Date(full.common[full.common.length - 1]).toISOString().slice(0, 10), bars: full.common.length, symbols: P.symbols, params: P },
-    metrics: m, benchMetrics, variants, yearTbl, wf, attr, monthly, mc,
+    metrics: m, benchMetrics, variants, yearTbl, wf, attr, monthly, mc, ai: aiBlock,
     eq: eqDS, dd: ddSeries, sym: symDS, sampleTrades: full.trades.slice(-50),
   };
   fs.mkdirSync(path.join(__dirname, 'public'), { recursive: true });
@@ -397,5 +421,12 @@ function main() {
   L(`In : ROI ${pct(wf.inSample.roi)}  Sharpe ${wf.inSample.sharpe.toFixed(2)}`);
   L(`Out: ROI ${pct(wf.outSample.roi)}  Sharpe ${wf.outSample.sharpe.toFixed(2)}`);
   if (mc) { L('\n--- Monte Carlo (2000 bootstraps) ---'); L(`ROI p5/p50/p95: ${pct(mc.roiP5)} / ${pct(mc.roiP50)} / ${pct(mc.roiP95)}  P(profit) ${pct(mc.probProfit)}  DD p95 ${pct(mc.ddP95)}`); }
+  if (aiBlock) {
+    L('\n--- AI co-pilot (' + aiBlock.model + ') ---');
+    L(`Reviewed ${aiBlock.reviewed} entries  | CONFIRM ${aiBlock.counts.CONFIRM} CAUTION ${aiBlock.counts.CAUTION} VETO ${aiBlock.counts.VETO}`);
+    if (variants.aiCoPilot) L(`AI-gated:  ROI ${pct(variants.aiCoPilot.roi)}  Sharpe ${variants.aiCoPilot.sharpe.toFixed(2)}  MaxDD ${pct(variants.aiCoPilot.maxDD)}  Trades ${variants.aiCoPilot.totalTrades}`);
+  }
 }
-main();
+
+if (require.main === module) main();
+module.exports = { run, computeFeatures, fullMetrics, tradeStats, attribution, monthlyReturns, monteCarlo, P };
