@@ -2,8 +2,10 @@ Adaptive Regime Switch Pro: project description (under 200 words)
 
 Adaptive Regime Switch Pro is an autonomous trading agent for BTC and ETH perpetuals. Most bots run one strategy in every market and give it all back when conditions change. This one reads the market every hour and adjusts how it behaves.
 
-It scores the current regime from trend strength (ADX), volatility (ATR percentile) and the macro trend (EMA-200), then picks a posture. In a confirmed trend it trades the breakout. In choppy range conditions it stands aside, because we tested mean reversion on this data and it lost money. When volatility spikes it stops opening new risk. Every position carries a hard ATR stop, a trailing exit, inverse-volatility sizing and a portfolio circuit breaker.
+It scores the regime from trend strength (ADX), volatility (ATR percentile) and the macro trend (EMA-200), then picks a posture. In a confirmed trend it trades the breakout. In choppy ranges it stands aside, because we tested mean reversion and it lost money. When volatility spikes it stops opening new risk. Every position carries a hard ATR stop, a trailing exit, inverse-volatility sizing and a circuit breaker.
 
-Over two years of real hourly data, buy and hold lost 18.7% with a 55% drawdown. The agent returned +7.3% and never drew down past 11%. We back that with a 60/40 walk-forward (no out-of-sample retuning), an ablation that justifies each component, and a 2,000-run Monte Carlo where 79% of paths finished in profit.
+An LLM co-pilot reviews each entry and vetoes weak ones. The agent also runs live in the cloud every hour on a paper account.
 
-No look-ahead. Fees and slippage charged on every fill.
+Over two years of real hourly data, buy and hold lost 18.7% with a 55% drawdown. The agent returned +7.3% and never drew down past 11%, backed by a walk-forward, a component ablation, and a 2,000-run Monte Carlo where 79% of paths finished in profit.
+
+No look-ahead. Fees and slippage on every fill.
