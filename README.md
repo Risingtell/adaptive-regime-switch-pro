@@ -1,6 +1,6 @@
 # Adaptive Regime Switch Pro
 
-An autonomous trading agent for BTC and ETH perpetuals. It reads the market regime every hour and changes how it behaves, instead of running one strategy in all conditions.
+An autonomous trading agent for BTC and ETH perpetuals. It reads the market regime every hour and changes how it behaves, instead of running one strategy in all conditions. An LLM co-pilot reviews every entry, and the agent also runs live in the cloud on a paper account.
 
 **Live demo:** https://rising-regime-switch.netlify.app
 
@@ -39,6 +39,14 @@ The numbers are stress-tested three ways:
 2. **Ablation.** Each component is switched off in turn to show it earns its place. A naive always-on breakout makes +1.2%; the full regime system makes +7.3% with roughly half the drawdown and half the trades. Bolting mean reversion back on lowers returns, which is why it was cut.
 3. **Monte Carlo.** 2,000 bootstrap resamples of the trade sequence map the distribution of outcomes rather than relying on one path.
 
+## AI co-pilot
+
+An LLM (Llama 3.3 70B via Groq) reviews every entry the rules engine proposes, using only point-in-time features, and rates it CONFIRM, CAUTION or VETO with a short reason. It runs at temperature 0 and every verdict is cached, so the result is reproducible. Across all 159 backtest entries it confirmed 138, cautioned 20 and vetoed 1. The single vetoed trade was a loser, so skipping it lifted return from +7.3% to +7.8% and Sharpe from 0.47 to 0.50 with no extra drawdown. The point is not a huge gain, it is that the model mostly agrees with the rules and overrules only genuinely poor entries. Code in `ai-copilot.js` and `ai-review.js`.
+
+## Live forward testing
+
+The agent also runs live. An hourly GitHub Action (`.github/workflows/live.yml`) pulls fresh BTC and ETH candles, runs the same regime logic on the latest closed bar, keeps a paper account, lets the AI co-pilot veto weak entries, and commits the state to `public/live-state.json`. The dashboard reads that file and shows a live panel that updates every hour. No real funds are used. Code in `live/`.
+
 ## Run it yourself
 
 Requires Node.js (no dependencies).
@@ -57,6 +65,9 @@ public/index.html
 
 - `backtest.js` - the engine: regime classification, the trend and mean-reversion sleeves, sizing, risk controls, ablation, attribution, Monte Carlo and metrics
 - `lib.js` - indicators and data loading (EMA, ATR, ADX, Donchian, rolling stats)
+- `ai-copilot.js`, `ai-review.js` - the LLM entry reviewer and the batch runner
+- `live/` - the hourly live paper-trading loop and its candle fetcher
+- `.github/workflows/live.yml` - the hourly cloud job that runs the live loop
 - `public/` - the tearsheet dashboard (single page, Chart.js)
 - `data/` - hourly OHLCV CSVs for BTC and ETH perps
 - `download.ps1` - fetches the price data
