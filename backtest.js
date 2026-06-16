@@ -134,7 +134,7 @@ function run(cfg = {}) {
     sv.cash += grossPnl - fee;
     grossTraded += sv.qty * price;
     trades.push({ sym: s, side: sv.pos > 0 ? 'long' : 'short', engine: sv.engine, regimeAtEntry: sv.regimeAtEntry,
-      entry: sv.entry, exit: price, pnl: grossPnl - fee, time: timeMs, hold: sv.bars, reason, ai: sv.entryCtx || null });
+      entry: sv.entry, exit: price, qty: sv.qty, pnl: grossPnl - fee, time: timeMs, hold: sv.bars, reason, ai: sv.entryCtx || null });
     perSym[s].exits.push({ t: timeMs, p: price });
     if (reason === 'stop') sv.cooldown = P.cooldown;
     sv.pos = 0; sv.qty = 0; sv.engine = null; sv.bars = 0; sv.entryCtx = null;
